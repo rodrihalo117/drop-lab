@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Drop Lab</title>
+<meta name="description" content="Patio de recreo de física 3D. Suelta esferas, cajas y cilindros, apílalos y derrúmbalos."/>
+<meta name="theme-color" content="#0a0b0d"/>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Syne:wght@600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#0a0b0d;--surf:rgba(20,22,28,.84);--fg:#eceef2;--muted:#8d929c;--acc:#b8c4d4;--bd:rgba(236,238,242,.12)}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:var(--bg);color:var(--fg);font-family:"IBM Plex Sans",system-ui,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
+#c{position:absolute;inset:0;display:block;touch-action:none}
+#ui{position:absolute;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom));z-index:2}
+.panel{pointer-events:auto;background:var(--surf);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--bd);border-radius:14px}
+h1{font-family:Syne,system-ui,sans-serif;font-size:1.2rem;font-weight:700;letter-spacing:-.03em;line-height:1.15}
+.muted{color:var(--muted);font-size:.72rem}
+button{font:inherit;color:var(--fg);background:transparent;border:0;border-radius:8px;height:44px;min-width:44px;padding:0 12px;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;user-select:none;transition:background .15s,color .15s,transform .15s}
+button:hover{background:rgba(236,238,242,.08)}
+button:active{transform:scale(.98)}
+button.on{background:var(--fg);color:var(--bg)}
+button:disabled{opacity:.38;pointer-events:none}
+#bar{pointer-events:auto;max-width:780px;width:100%;margin:0 auto;padding:8px 8px 10px}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.grow{flex:1 1 auto}
+label.sl{flex:1 1 160px;padding:4px 10px 2px;display:flex;flex-direction:column;gap:2px}
+label.sl span{display:flex;justify-content:space-between;align-items:baseline;font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+label.sl b{color:var(--fg);font-weight:500;text-transform:none;font-size:.78rem;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px;cursor:pointer}
+#boot{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg);z-index:6}
+#boot h1{font-size:clamp(1.8rem,6vw,2.6rem)}
+#boot .bar{width:96px;height:1px;background:rgba(236,238,242,.12);overflow:hidden}
+#boot .bar i{display:block;width:50%;height:100%;background:var(--acc);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:translateX(-20%);opacity:.4}50%{transform:translateX(80%);opacity:1}}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.stat{padding:8px 12px;min-width:76px}
+.stat b{font-family:Syne,system-ui,sans-serif;font-size:1.15rem}
+#pause{width:44px;padding:0}
+.sub{display:none;margin-top:3px}
+@media(min-width:640px){.sub{display:block}h1{font-size:1.35rem}}
+@media(prefers-reduced-motion:reduce){#boot .bar i{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="boot">
+  <h1>Drop Lab</h1>
+  <p class="muted">Cargando simulación</p>
+  <div class="bar"><i></i></div>
+</div>
+<div id="ui">
+  <header class="top">
+    <div class="panel" style="padding:10px 14px">
+      <h1>Drop Lab</h1>
+      <p class="muted sub">Arrastra cuerpos · orbita la cámara · toca el suelo para soltar</p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <div class="panel stat">
+        <p class="muted">CUERPOS</p>
+        <p><b id="count">0</b><span class="muted"> /80</span></p>
+      </div>
+      <button class="panel" id="pause" title="Pausa (P)" aria-label="Pausar simulación">II</button>
+    </div>
+  </header>
+  <div id="bar" class="panel">
+    <div class="row">
+      <button id="b-sphere" class="grow" title="Esfera (1)">Esfera</button>
+      <button id="b-box" class="grow on" title="Caja (2)">Caja</button>
+      <button id="b-cyl" class="grow" title="Cilindro (3)">Cilindro</button>
+      <button id="b-rain" title="Lluvia (R)">Lluvia</button>
+      <button id="b-clear" title="Limpiar (C)">Limpiar</button>
+    </div>
+    <div class="row">
+      <label class="sl">
+        <span>Gravedad <b id="g-val">9.8 m/s²</b></span>
+        <input id="g" type="range" min="0" max="20" step="0.1" value="9.81" aria-label="Gravedad"/>
+      </label>
+      <label class="sl">
+        <span>Rebote <b id="r-val">0.32</b></span>
+        <input id="r" type="range" min="0" max="0.95" step="0.01" value="0.32" aria-label="Restitución"/>
+      </label>
+    </div>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js';
+import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.14.0/+esm';
+
+const MAX = 80;
+const SPHERE_R = 0.45, BOX = 0.82, CYL_R = 0.38, CYL_H = 0.92;
+const COLORS = {
+  sphere: ['#d7dbe2', '#c5ccd6', '#b9c4d0'],
+  box: ['#8aa0b6', '#7d93a8', '#6f8499'],
+  cylinder: ['#c2b6a6', '#b7aa98', '#a89b8a']
+};
+const LIFT = { sphere: SPHERE_R + 0.04, box: BOX / 2 + 0.04, cylinder: CYL_H / 2 + 0.04 };
+
+const boot = document.getElementById('boot');
+try {
+  await RAPIER.init();
+} catch (err) {
+  boot.querySelector('p').textContent = 'No se pudo cargar el motor de física.';
+  throw err;
+}
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x0a0b0d);
+canvas.style.touchAction = 'none';
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0a0b0d, 18, 52);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 80);
+camera.position.set(11, 8.5, 13);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 6;
+controls.maxDistance = 28;
+controls.maxPolarAngle = Math.PI / 2 - 0.08;
+controls.target.set(0, 0.6, 0);
+
+scene.add(new THREE.HemisphereLight(0xc9d2de, 0x16181e, 0.55));
+scene.add(new THREE.AmbientLight(0xffffff, 0.22));
+const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+sun.position.set(10, 16, 8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 42;
+sun.shadow.camera.left = -16;
+sun.shadow.camera.right = 16;
+sun.shadow.camera.top = 16;
+sun.shadow.camera.bottom = -16;
+sun.shadow.bias = -0.00025;
+scene.add(sun);
+
+const sphereGeo = new THREE.SphereGeometry(SPHERE_R, 28, 20);
+const boxGeo = new THREE.BoxGeometry(BOX, BOX, BOX);
+const cylGeo = new THREE.CylinderGeometry(CYL_R, CYL_R, CYL_H, 28);
+const mats = new Map();
+function material(color) {
+  let m = mats.get(color);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.14 });
+    mats.set(color, m);
+  }
+  return m;
+}
+const wallMat = material('#1e222b');
+const floorMat = new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.92, metalness: 0.04 });
+
+let gravity = 9.81;
+let restitution = 0.32;
+let paused = false;
+let tool = 'box';
+const world = new RAPIER.World({ x: 0, y: -gravity, z: 0 });
+if (world.integrationParameters) world.integrationParameters.numSolverIterations = 8;
+const items = [];
+
+function addBoxMesh(x, y, z, w, h, d, quat) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+  mesh.position.set(x, y, z);
+  if (quat) mesh.quaternion.copy(quat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+{
+  const ground = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  world.createCollider(RAPIER.ColliderDesc.cuboid(12, 0.4, 12).setTranslation(0, -0.4, 0).setFriction(0.92).setRestitution(0.05), ground);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(12, 2.2, 0.28).setTranslation(0, 2, -12.1).setFriction(0.8), ground);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(12, 2.2, 0.28).setTranslation(0, 2, 12.1).setFriction(0.8), ground);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(0.28, 2.2, 12).setTranslation(-12.1, 2, 0).setFriction(0.8), ground);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(0.28, 2.2, 12).setTranslation(12.1, 2, 0).setFriction(0.8), ground);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const grid = new THREE.GridHelper(24, 24, 0x3c4450, 0x262b34);
+  grid.position.y = 0.012;
+  scene.add(grid);
+}
+
+{
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.4, -0.42));
+  const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(5.2, 1.05, -4.2).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(2.4, 0.14, 1.5).setFriction(0.8).setRestitution(0.08), rb);
+  addBoxMesh(5.2, 1.05, -4.2, 4.8, 0.28, 3, q);
+}
+
+[[-4.4, 0.28, -3.6, 2.2, 0.56, 2.2], [-4.4, 0.55, -1.55, 1.7, 1.1, 1.7], [-4.4, 0.82, 0.15, 1.3, 1.64, 1.3]].forEach(([x, y, z, w, h, d]) => {
+  const rb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(w / 2, h / 2, d / 2).setFriction(0.88).setRestitution(0.04), rb);
+  addBoxMesh(x, y, z, w, h, d);
+});
+
+function pickColor(kind) {
+  const p = COLORS[kind];
+  return p[(Math.random() * p.length) | 0];
+}
+function descFor(kind) {
+  if (kind === 'sphere') return RAPIER.ColliderDesc.ball(SPHERE_R);
+  if (kind === 'box') return RAPIER.ColliderDesc.cuboid(BOX / 2, BOX / 2, BOX / 2);
+  return RAPIER.ColliderDesc.cylinder(CYL_H / 2, CYL_R);
+}
+function geoFor(kind) {
+  return kind === 'sphere' ? sphereGeo : kind === 'box' ? boxGeo : cylGeo;
+}
+
+function updateCount() {
+  document.getElementById('count').textContent = String(items.length);
+  const cap = items.length >= MAX;
+  document.getElementById('b-sphere').disabled = cap;
+  document.getElementById('b-box').disabled = cap;
+  document.getElementById('b-cyl').disabled = cap;
+  document.getElementById('b-rain').disabled = cap;
+  document.getElementById('b-clear').disabled = items.length === 0;
+}
+
+function addBody(kind, pos) {
+  if (items.length >= MAX) return;
+  const p = pos || { x: (Math.random() - 0.5) * 5, y: 6.2 + Math.random() * 2.4, z: (Math.random() - 0.5) * 5 };
+  p.x = Math.max(-10.5, Math.min(10.5, p.x));
+  p.y = Math.max(0.4, p.y);
+  p.z = Math.max(-10.5, Math.min(10.5, p.z));
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.2));
+  const body = world.createRigidBody(
+    RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(p.x, p.y, p.z)
+      .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+      .setLinearDamping(0.12)
+      .setAngularDamping(0.18)
+      .setCcdEnabled(kind === 'sphere')
+  );
+  const col = world.createCollider(
+    descFor(kind).setRestitution(restitution).setFriction(0.82).setDensity(kind === 'box' ? 1.6 : 1),
+    body
+  );
+  const mesh = new THREE.Mesh(geoFor(kind), material(pickColor(kind)));
+  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.userData.body = body;
+  scene.add(mesh);
+  items.push({ mesh, body, col, kind });
+  updateCount();
+}
+
+function clearBodies() {
+  for (const it of items) {
+    world.removeRigidBody(it.body);
+    scene.remove(it.mesh);
+  }
+  items.length = 0;
+  updateCount();
+}
+
+function rain() {
+  const n = Math.min(12, MAX - items.length);
+  const kinds = ['sphere', 'box', 'cylinder'];
+  for (let i = 0; i < n; i++) {
+    addBody(kinds[i % 3], { x: (Math.random() - 0.5) * 6, y: 7 + i * 0.45, z: (Math.random() - 0.5) * 6 });
+  }
+}
+
+function setRestitution(v) {
+  restitution = v;
+  for (const it of items) it.col.setRestitution(v);
+}
+function setGravity(v) {
+  gravity = v;
+  world.gravity = { x: 0, y: -v, z: 0 };
+}
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const plane = new THREE.Plane();
+const hit = new THREE.Vector3();
+const camDir = new THREE.Vector3();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let dragging = null;
+let downPt = null;
+
+function ndc(e) {
+  const r = canvas.getBoundingClientRect();
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  ndc(e);
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(items.map((it) => it.mesh), false);
+  if (hits.length) {
+    const mesh = hits[0].object;
+    const body = mesh.userData.body;
+    camera.getWorldDirection(camDir);
+    plane.setFromNormalAndCoplanarPoint(camDir, hits[0].point);
+    const t = body.translation();
+    dragging = {
+      body,
+      offset: new THREE.Vector3(t.x - hits[0].point.x, t.y - hits[0].point.y, t.z - hits[0].point.z),
+      last: new THREE.Vector3(t.x, t.y, t.z),
+      lastT: performance.now(),
+      vel: new THREE.Vector3()
+    };
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    if (body.lockRotations) body.lockRotations(true, true);
+    body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    controls.enabled = false;
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+    e.preventDefault();
+    downPt = null;
+    return;
+  }
+  downPt = { x: e.clientX, y: e.clientY };
+});
+
+function endDrag(e) {
+  if (dragging) {
+    const { body, vel } = dragging;
+    body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    if (body.lockRotations) body.lockRotations(false, true);
+    const speed = vel.length();
+    if (speed > 16) vel.multiplyScalar(16 / speed);
+    body.setLinvel({ x: vel.x, y: vel.y, z: vel.z }, true);
+    dragging = null;
+    controls.enabled = true;
+  }
+  if (downPt && e && e.clientX != null) {
+    const dx = e.clientX - downPt.x;
+    const dy = e.clientY - downPt.y;
+    if (dx * dx + dy * dy < 25) {
+      ndc(e);
+      raycaster.setFromCamera(pointer, camera);
+      if (raycaster.ray.intersectPlane(groundPlane, hit)) {
+        addBody(tool, { x: hit.x, y: LIFT[tool], z: hit.z });
+      }
+    }
+  }
+  downPt = null;
+}
+
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+window.addEventListener('pointerup', (e) => { if (dragging) endDrag(e); });
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  ndc(e);
+  raycaster.setFromCamera(pointer, camera);
+  if (!raycaster.ray.intersectPlane(plane, hit)) return;
+  hit.add(dragging.offset);
+  hit.x = THREE.MathUtils.clamp(hit.x, -11, 11);
+  hit.z = THREE.MathUtils.clamp(hit.z, -11, 11);
+  hit.y = THREE.MathUtils.clamp(hit.y, 0.38, 12);
+  const now = performance.now();
+  const dt = Math.max(0.001, (now - dragging.lastT) / 1000);
+  dragging.vel.set(hit.x - dragging.last.x, hit.y - dragging.last.y, hit.z - dragging.last.z).divideScalar(dt);
+  dragging.last.copy(hit);
+  dragging.lastT = now;
+  dragging.body.setNextKinematicTranslation({ x: hit.x, y: hit.y, z: hit.z });
+});
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (!paused) world.step();
+  for (const it of items) {
+    const t = it.body.translation();
+    const r = it.body.rotation();
+    it.mesh.position.set(t.x, t.y, t.z);
+    it.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+  }
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+function selectTool(kind, spawn) {
+  tool = kind;
+  document.getElementById('b-sphere').classList.toggle('on', kind === 'sphere');
+  document.getElementById('b-box').classList.toggle('on', kind === 'box');
+  document.getElementById('b-cyl').classList.toggle('on', kind === 'cylinder');
+  if (spawn !== false) addBody(kind);
+}
+
+document.getElementById('b-sphere').onclick = () => selectTool('sphere');
+document.getElementById('b-box').onclick = () => selectTool('box');
+document.getElementById('b-cyl').onclick = () => selectTool('cylinder');
+document.getElementById('b-rain').onclick = rain;
+document.getElementById('b-clear').onclick = clearBodies;
+const pauseBtn = document.getElementById('pause');
+pauseBtn.onclick = () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? '\u25B6' : 'II';
+  pauseBtn.setAttribute('aria-label', paused ? 'Reanudar simulación' : 'Pausar simulación');
+};
+document.getElementById('g').oninput = (e) => {
+  setGravity(Number(e.target.value));
+  document.getElementById('g-val').textContent = gravity.toFixed(1) + ' m/s\u00b2';
+};
+document.getElementById('r').oninput = (e) => {
+  setRestitution(Number(e.target.value));
+  document.getElementById('r-val').textContent = restitution.toFixed(2);
+};
+addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.code === 'Digit1') selectTool('sphere');
+  if (e.code === 'Digit2') selectTool('box');
+  if (e.code === 'Digit3') selectTool('cylinder');
+  if (e.code === 'KeyR') rain();
+  if (e.code === 'KeyC') clearBodies();
+  if (e.code === 'KeyP') pauseBtn.click();
+  if (e.code === 'Space') { e.preventDefault(); addBody(tool); }
+});
+
+addBody('box', { x: 0, y: 0.42, z: 0 });
+addBody('box', { x: 0.06, y: 1.28, z: 0.04 });
+addBody('box', { x: -0.04, y: 2.14, z: -0.05 });
+addBody('cylinder', { x: -1.6, y: 0.5, z: 1.4 });
+addBody('sphere', { x: 2.1, y: 4.8, z: -0.9 });
+addBody('sphere', { x: -0.4, y: 6.2, z: 0.3 });
+addBody('cylinder', { x: 1.4, y: 5.4, z: 1.1 });
+
+boot.remove();
+loop();
+</script>
+</body>
+</html>
